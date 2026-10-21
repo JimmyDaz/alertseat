@@ -19,7 +19,7 @@ export default async function search({ origin, destination, date, returnDate, ca
       data: {
         slices,
         passengers: [{ type: 'adult' }],
-        cabin_class: cabin === 'BUSINESS' ? 'business' : 'premium_economy',
+        cabin_class: { BUSINESS: 'business', ECONOMY: 'economy' }[cabin] ?? 'premium_economy',
         max_connections: maxStops ?? 1,
       },
     }),

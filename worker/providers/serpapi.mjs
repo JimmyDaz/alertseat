@@ -11,7 +11,7 @@ export default async function search({ origin, destination, date, returnDate, ca
     outbound_date: date,
     currency,
     hl: 'fr',
-    travel_class: cabin === 'BUSINESS' ? '3' : '2',
+    travel_class: { BUSINESS: '3', ECONOMY: '1' }[cabin] ?? '2', // 1 éco, 2 éco+, 3 business
     type: returnDate ? '1' : '2',
     stops: maxStops === 0 ? '1' : '2', // 1 = direct seulement, 2 = max 1 escale
     api_key: process.env.SERPAPI_KEY,

@@ -5,7 +5,7 @@ import { googleFlightsLink } from './link.mjs';
 const hash = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
 export default async function search({ origin, destination, date, returnDate, cabin, currency }) {
-  const base = cabin === 'BUSINESS' ? 3200 : 1300;
+  const base = { BUSINESS: 3200, ECONOMY: 600 }[cabin] ?? 1300;
   const routeFactor = 0.7 + (hash(origin + destination) % 100) / 160;
   const noise = 0.85 + (hash(`${date}${Math.floor(Date.now() / 3.6e6)}`) % 30) / 100;
   const dip = hash(`${destination}${date}${Math.floor(Date.now() / 1.08e7)}`) % 9 === 0 ? 0.45 : 1;
