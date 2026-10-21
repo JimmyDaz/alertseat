@@ -19,9 +19,9 @@ create table if not exists alerts (
   one_way boolean not null default false,
   trip_min int,                                 -- durée du séjour (jours), aller-retour
   trip_max int,
-  cabin text not null check (cabin in ('PREMIUM_ECONOMY','BUSINESS')),
-  max_price numeric default 700,                -- seuil absolu (700 € par défaut)
-  drop_pct int not null default 30,             -- baisse vs médiane habituelle (%)
+  cabin text not null check (cabin in ('ECONOMY','PREMIUM_ECONOMY','BUSINESS')),
+  max_price numeric,                            -- plafond facultatif (vide = aucun plafond)
+  drop_pct int not null default 25,             -- baisse vs médiane habituelle (%)
   currency text not null default 'EUR',
   airlines_include text[] not null default '{}',
   airlines_exclude text[] not null default '{}',
