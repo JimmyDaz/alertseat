@@ -37,6 +37,7 @@ export function titlePrice(title) {
 }
 
 const CABIN_WORDS = {
+  ECONOMY: ['économique', 'economique', 'economy', 'classe éco'],
   BUSINESS: ['business', 'affaires'],
   PREMIUM_ECONOMY: ['premium', 'éco+', 'eco+', 'économique premium'],
 };

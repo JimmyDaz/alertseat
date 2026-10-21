@@ -8,7 +8,7 @@ const fr = (d) => (d ? new Date(d).toLocaleDateString('fr-FR') : '');
 const REASON = { seuil: 'sous ton prix maximum', baisse: 'forte baisse vs prix habituel', last_minute: 'last minute' };
 
 export function dealMessage(d) {
-  const cabin = d.cabin === 'BUSINESS' ? 'Business' : 'Éco+';
+  const cabin = { BUSINESS: 'Business', ECONOMY: 'Éco' }[d.cabin] ?? 'Éco+';
   const lines = [
     `✈️ <b>${esc(cabin)} · ${esc(d.route.replace('-', ' → '))}</b>`,
     `💶 <b>${eur(d.price, d.currency)}</b>` +

@@ -7,7 +7,7 @@ import { ANYWHERE_POOL } from './airports.mjs';
 import { allowance, monthKey } from './budget.mjs';
 
 const PROVIDER = process.env.PROVIDER || 'mock'; // mock | duffel | serpapi
-const CAP = Number(process.env.PRICE_CAP || 700); // AlertSeat ne propose jamais d'offre au-dessus
+const CAP = process.env.PRICE_CAP ? Number(process.env.PRICE_CAP) : Infinity; // plafond global facultatif (vide = aucun)
 // Quota mensuel de recherches du fournisseur : À RÉGLER selon son offre gratuite réelle (variable SEARCH_BUDGET_MONTH).
 const BUDGET = PROVIDER === 'mock' ? Infinity : Number(process.env.SEARCH_BUDGET_MONTH || 200);
 const PER_ALERT = Number(process.env.MAX_SEARCHES_PER_ALERT || 2);
@@ -122,9 +122,11 @@ async function processSearch(alert, s) {
     price: best.price, currency: best.currency, airline: best.airline, stops: best.stops, source: PROVIDER, link: best.link,
   });
   console.log(`  ${route} ${s.date}: ${best.price} ${best.currency}${verdict.isDeal ? ` 🔥 ${verdict.reasons}` : ''}`);
-  // Exclusif : on ne propose que les offres sous le plafond (700 € par défaut), toutes compagnies.
-  const cap = alert.max_price != null ? Math.min(Number(alert.max_price), CAP) : CAP;
+  // Plafond facultatif (celui de l'alerte, et PRICE_CAP s'il est défini). Sans plafond, seules les vraies
+  // baisses par rapport au prix habituel de la route (ou le last minute) déclenchent une notification.
+  const cap = Math.min(alert.max_price != null ? Number(alert.max_price) : Infinity, CAP);
   if (best.price > cap) return;
+  if (!verdict.isDeal) return;
   const confirmed = await confirmOffer(alert, s, best, cap);
   if (!confirmed) { console.log('    ✗ prix non confirmé, offre ignorée'); return; }
   best = confirmed;
@@ -138,7 +140,7 @@ async function processSearch(alert, s) {
   const row = {
     alert_id: alert.id, user_id: alert.user_id, route, cabin: alert.cabin, depart_date: s.date, return_date: s.returnDate,
     price: best.price, currency: best.currency, median_price: verdict.median, discount_pct: verdict.discountPct,
-    reasons: [...new Set(['seuil', ...verdict.reasons])], airline: best.airline, stops: best.stops, link: best.link, source: PROVIDER,
+    reasons: verdict.reasons, airline: best.airline, stops: best.stops, link: best.link, source: PROVIDER,
     last_seen: new Date().toISOString(),
   };
   const notify = shouldNotify(existing, best.price);
