@@ -49,9 +49,9 @@ const $app = document.getElementById('app'), $nav = document.getElementById('nav
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur = (n, c = 'EUR') => new Intl.NumberFormat('fr-FR', { style:'currency', currency:c, maximumFractionDigits:0 }).format(n);
 const fdate = (d) => (d ? new Date(d).toLocaleDateString('fr-FR') : '');
-const cabinName = (c) => (c === 'BUSINESS' ? 'Business' : 'Éco+ (Premium Economy)');
+const CABIN = { BUSINESS: 'Business', PREMIUM_ECONOMY: 'Éco+', ECONOMY: 'Éco' };
+const cabinName = (c) => ({ BUSINESS: 'Business', PREMIUM_ECONOMY: 'Éco+ (Premium Economy)', ECONOMY: 'Économique' }[c] ?? c);
 const codes = (s) => s.split(/[\s,;]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
-const PRICE_CAP = 700;
 let tab = 'dash', user = null, editing = null;
 
 function ago(ts) {
@@ -87,20 +87,20 @@ async function dashView() {
     sb.from('deals').select('*').order('last_seen', { ascending: false }).limit(40),
     sb.from('alerts').select('id,name,active,last_checked_at'),
     sb.from('feed_items').select('*').order('published_at', { ascending: false }).limit(15),
-    sb.from('price_observations').select('route,cabin,price,currency,airline,stops,depart_date,return_date,link,observed_at').lte('price', PRICE_CAP).gte('observed_at', since).order('price').limit(300),
+    sb.from('price_observations').select('route,cabin,price,currency,airline,stops,depart_date,return_date,link,observed_at').gte('observed_at', since).order('price').limit(300),
   ]);
   const seen = new Set(), best = (cheap ?? []).filter((o) => { const k = o.route + o.cabin; return seen.has(k) ? false : (seen.add(k), true); }).slice(0, 10);
   const names = Object.fromEntries((alerts ?? []).map((a) => [a.id, a.name]));
   const active = (deals ?? []).filter((d) => d.status === 'active');
   const old = (deals ?? []).filter((d) => d.status !== 'active');
   const nAct = (alerts ?? []).filter((a) => a.active).length;
-  const bestCard = (o) => `<div class="card"><div class="row"><div><span class="price">${eur(o.price, o.currency)}</span> <b>${esc(o.route.replace('-', ' → '))}</b> · ${o.cabin === 'BUSINESS' ? 'Business' : 'Éco+'}</div>
+  const bestCard = (o) => `<div class="card"><div class="row"><div><span class="price">${eur(o.price, o.currency)}</span> <b>${esc(o.route.replace('-', ' → '))}</b> · ${CABIN[o.cabin] ?? o.cabin}</div>
       <span class="tag">${esc(o.airline || 'compagnie ?')}</span></div>
       <div class="mute">${fdate(o.depart_date)}${o.return_date ? ' → ' + fdate(o.return_date) : ' (aller simple)'}${o.stops === 0 ? ' · direct' : o.stops ? ` · ${o.stops} escale(s)` : ''} · relevé ${ago(o.observed_at)}</div>
       ${o.link ? `<p><a href="${esc(o.link)}" target="_blank" rel="noopener">👉 Voir / réserver</a></p>` : ''}</div>`;
   const dealCard = (d) => `<div class="card"><div class="row"><div>
       <div class="price">${eur(d.price, d.currency)}</div>
-      <div><b>${esc(d.route.replace('-', ' → '))}</b> · ${d.cabin === 'BUSINESS' ? 'Business' : 'Éco+'}</div></div>
+      <div><b>${esc(d.route.replace('-', ' → '))}</b> · ${CABIN[d.cabin] ?? d.cabin}</div></div>
       <div>${d.status === 'active' ? '<span class="tag hot">En cours</span>' : '<span class="tag">Expirée</span>'}${d.discount_pct ? `<span class="tag">−${d.discount_pct} %</span>` : ''}</div></div>
       <div class="mute">${fdate(d.depart_date)}${d.return_date ? ' → ' + fdate(d.return_date) : ' (aller simple)'} · ${esc(d.airline || '')}${d.stops === 0 ? ' · direct' : d.stops ? ` · ${d.stops} escale(s)` : ''}</div>
       <div class="mute">Alerte « ${esc(names[d.alert_id] || '?')} » · vue pour la 1ère fois ${ago(d.first_seen)} · dernière vue ${ago(d.last_seen)}
@@ -108,9 +108,9 @@ async function dashView() {
       ${d.link ? `<p><a href="${esc(d.link)}" target="_blank" rel="noopener">👉 Voir / réserver</a></p>` : ''}</div>`;
   $app.innerHTML = `<h1>✈️ AlertSeat</h1>
     <div class="card row"><div><b>${nAct}</b> alerte(s) active(s)</div><div><b>${active.length}</b> offre(s) en cours</div></div>
-    <h2>Meilleurs tarifs sous ${PRICE_CAP} € (toutes compagnies, 48 dernières heures)</h2>${best.map(bestCard).join('') || `<p class="mute">Aucun tarif sous ${PRICE_CAP} € relevé ces 48 h. Le prochain passage est dans moins d’1 h.</p>`}
+    <h2>Meilleurs tarifs relevés (toutes compagnies, 48 dernières heures)</h2>${best.map(bestCard).join('') || `<p class="mute">Aucun tarif relevé ces 48 h. Les recherches sont étalées sur le mois : patience.</p>`}
     <h2>Offres en cours</h2>${active.map(dealCard).join('') || '<p class="mute">Aucune pour l’instant. Les vérifications tournent toutes les 3 h.</p>'}
-    <h2>Bons plans des sites spécialisés</h2>${(feed ?? []).filter((f) => { const m = f.title.match(/(\d{1,3}(?:[\s\u00a0\u202f.]\d{3})+|\d{2,5})\s*(?:€|eur\b)/i); return !m || Number(m[1].replace(/\D/g, '')) <= PRICE_CAP; }).map((f) => `<div class="card"><a href="${esc(f.link)}" target="_blank" rel="noopener">${esc(f.title)}</a>
+    <h2>Bons plans des sites spécialisés</h2>${(feed ?? []).map((f) => `<div class="card"><a href="${esc(f.link)}" target="_blank" rel="noopener">${esc(f.title)}</a>
       <div class="mute">${esc(f.source)} · ${f.published_at ? ago(f.published_at) : ''}${f.matched_alert_ids?.length ? ' · <b>correspond à une de tes alertes</b>' : ''}</div></div>`).join('') || '<p class="mute">Rien pour l’instant.</p>'}
     <h2>Historique des offres</h2>${old.map(dealCard).join('') || '<p class="mute">Vide.</p>'}`;
 }
@@ -125,14 +125,15 @@ function alertForm(a = {}) {
     <input id="f_dest" value="${esc((a.destinations ?? []).join(', '))}" placeholder="JFK, MIA">
     <div class="check"><input type="checkbox" id="f_any" ${a.anywhere ? 'checked' : ''}><span>N’importe où (je teste une sélection de destinations long-courrier)</span></div>
     <div class="grid"><div><label>Classe</label><select id="f_cabin">
+      <option value="ECONOMY" ${a.cabin === 'ECONOMY' ? 'selected' : ''}>Économique</option>
       <option value="BUSINESS" ${a.cabin === 'BUSINESS' ? 'selected' : ''}>Business</option>
       <option value="PREMIUM_ECONOMY" ${a.cabin === 'PREMIUM_ECONOMY' ? 'selected' : ''}>Éco+ (Premium Economy)</option></select></div>
-      <div><label>Prix maximum (€)</label><input id="f_max" type="number" min="0" value="${v('max_price', 700)}" placeholder="Ex. 700"></div>
+      <div><label>Prix maximum (€), vide = aucun plafond</label><input id="f_max" type="number" min="0" value="${v('max_price')}" placeholder="Aucun plafond"></div>
       <div><label>Départ à partir du</label><input id="f_from" type="date" value="${v('date_from')}"></div>
       <div><label>Départ jusqu’au</label><input id="f_to" type="date" value="${v('date_to')}"></div>
       <div><label>Séjour min (jours)</label><input id="f_tmin" type="number" min="1" value="${v('trip_min')}" placeholder="7"></div>
       <div><label>Séjour max (jours)</label><input id="f_tmax" type="number" min="1" value="${v('trip_max')}" placeholder="21"></div>
-      <div><label>Baisse à signaler (% sous le prix habituel)</label><input id="f_drop" type="number" min="5" max="90" value="${v('drop_pct', 30)}"></div>
+      <div><label>Baisse à signaler (% sous le prix habituel)</label><input id="f_drop" type="number" min="5" max="90" value="${v('drop_pct', 25)}"></div>
       <div><label>Escales maximum</label><select id="f_stops">${[0, 1, 2].map((n) => `<option value="${n}" ${(a.max_stops ?? 1) === n ? 'selected' : ''}>${n === 0 ? 'Direct' : n}</option>`).join('')}</select></div></div>
     <div class="check"><input type="checkbox" id="f_one" ${a.one_way ? 'checked' : ''}><span>Aller simple</span></div>
     <label>Compagnies à exclure (optionnel, codes ex. FR, U2). Vide = toutes les compagnies</label>
@@ -148,7 +149,7 @@ async function saveAlert() {
     name: g('f_name').value.trim(), destinations: codes(g('f_dest').value), anywhere: g('f_any').checked,
     cabin: g('f_cabin').value, max_price: num('f_max'), date_from: g('f_from').value, date_to: g('f_to').value,
     one_way: g('f_one').checked, trip_min: g('f_one').checked ? null : num('f_tmin'), trip_max: g('f_one').checked ? null : num('f_tmax'),
-    drop_pct: num('f_drop') ?? 30, max_stops: num('f_stops') ?? 1,
+    drop_pct: num('f_drop') ?? 25, max_stops: num('f_stops') ?? 1,
     airlines_exclude: codes(g('f_ex').value), airlines_include: codes(g('f_in').value), origins: ['CDG', 'ORY'],
   };
   const err = !row.name ? 'Donne un nom à l’alerte.' : (!row.anywhere && !row.destinations.length) ? 'Indique une destination ou coche « n’importe où ».'
