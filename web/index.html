@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1b2d">
+<title>AlertSeat</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<style>
+  :root { --bg:#f4f6fa; --card:#fff; --ink:#14213d; --mute:#5b6577; --line:#e1e5ee; --accent:#0e8f86; --warn:#c2410c; --hot:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b1220; --card:#131d31; --ink:#e8edf6; --mute:#9aa6bb; --line:#24324d; --accent:#4fd1c5; --warn:#fb923c; --hot:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.45 system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:760px; margin:0 auto; padding:16px 16px 90px; }
+  h1 { font-size:20px; margin:8px 0 12px; } h2 { font-size:17px; margin:20px 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin:10px 0; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+  .mute { color:var(--mute); font-size:14px; } .price { font-size:22px; font-weight:700; }
+  .tag { display:inline-block; font-size:12px; padding:2px 8px; border-radius:99px; background:var(--line); margin-right:4px; }
+  .tag.hot { background:var(--hot); color:#fff; } .tag.off { background:var(--warn); color:#fff; }
+  label { display:block; font-size:14px; margin:10px 0 4px; color:var(--mute); }
+  input, select { width:100%; font:inherit; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button { font:inherit; padding:10px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#04201d; font-weight:600; }
+  button.danger { color:var(--hot); }
+  nav { position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
+  nav button { flex:1; border:0; border-radius:0; padding:14px 4px; background:none; }
+  nav button.on { color:var(--accent); font-weight:700; }
+  a { color:var(--accent); } svg.spark { width:100%; height:44px; } .hide { display:none; }
+  .check { display:flex; gap:8px; align-items:center; margin:10px 0; color:var(--ink); } .check input { width:auto; }
+</style>
+</head>
+<body>
+<main id="app"><p class="mute">Chargement…</p></main>
+<nav id="nav" class="hide">
+  <button data-tab="dash">Tableau de bord</button>
+  <button data-tab="alerts">Alertes</button>
+  <button data-tab="settings">Réglages</button>
+</nav>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+const { createClient } = supabase;
+const sb = createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY);
+const $app = document.getElementById('app'), $nav = document.getElementById('nav');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur = (n, c = 'EUR') => new Intl.NumberFormat('fr-FR', { style:'currency', currency:c, maximumFractionDigits:0 }).format(n);
+const fdate = (d) => (d ? new Date(d).toLocaleDateString('fr-FR') : '');
+const cabinName = (c) => (c === 'BUSINESS' ? 'Business' : 'Éco+ (Premium Economy)');
+const codes = (s) => s.split(/[\s,;]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+const PRICE_CAP = 700;
+let tab = 'dash', user = null, editing = null;
+
+function ago(ts) {
+  const h = (Date.now() - new Date(ts)) / 3.6e6;
+  return h < 1 ? 'il y a moins d’1 h' : h < 48 ? `il y a ${Math.round(h)} h` : `il y a ${Math.round(h / 24)} j`;
+}
+function spark(values) {
+  if (values.length < 2) return '<div class="mute">Pas encore assez de relevés pour tracer l’historique.</div>';
+  const min = Math.min(...values), max = Math.max(...values), w = 300, h = 40;
+  const pts = values.map((v, i) => `${(i / (values.length - 1)) * w},${h - 4 - ((v - min) / (max - min || 1)) * (h - 8)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${pts}"/></svg>
+          <div class="mute">Prix le plus bas par jour : de ${eur(min)} à ${eur(max)}</div>`;
+}
+
+// ---------- Connexion (lien magique par email)
+function loginView() {
+  $nav.classList.add('hide');
+  $app.innerHTML = `<h1>✈️ AlertSeat</h1><div class="card">
+    <p>Entre ton email : tu recevras un lien de connexion (pas de mot de passe).</p>
+    <input id="email" type="email" placeholder="ton@email.fr" autocomplete="email">
+    <p><button class="primary" id="go">Recevoir le lien</button></p><p id="msg" class="mute"></p></div>`;
+  document.getElementById('go').onclick = async () => {
+    const email = document.getElementById('email').value.trim();
+    const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href.split('#')[0] } });
+    document.getElementById('msg').textContent = error ? `Erreur : ${error.message}` : 'Lien envoyé ! Ouvre ton email sur cet appareil.';
+  };
+}
+
+// ---------- Tableau de bord
+async function dashView() {
+  const since = new Date(Date.now() - 48 * 3.6e6).toISOString();
+  const [{ data: deals }, { data: alerts }, { data: feed }, { data: cheap }] = await Promise.all([
+    sb.from('deals').select('*').order('last_seen', { ascending: false }).limit(40),
+    sb.from('alerts').select('id,name,active,last_checked_at'),
+    sb.from('feed_items').select('*').order('published_at', { ascending: false }).limit(15),
+    sb.from('price_observations').select('route,cabin,price,currency,airline,stops,depart_date,return_date,link,observed_at').lte('price', PRICE_CAP).gte('observed_at', since).order('price').limit(300),
+  ]);
+  const seen = new Set(), best = (cheap ?? []).filter((o) => { const k = o.route + o.cabin; return seen.has(k) ? false : (seen.add(k), true); }).slice(0, 10);
+  const names = Object.fromEntries((alerts ?? []).map((a) => [a.id, a.name]));
+  const active = (deals ?? []).filter((d) => d.status === 'active');
+  const old = (deals ?? []).filter((d) => d.status !== 'active');
+  const nAct = (alerts ?? []).filter((a) => a.active).length;
+  const bestCard = (o) => `<div class="card"><div class="row"><div><span class="price">${eur(o.price, o.currency)}</span> <b>${esc(o.route.replace('-', ' → '))}</b> · ${o.cabin === 'BUSINESS' ? 'Business' : 'Éco+'}</div>
+      <span class="tag">${esc(o.airline || 'compagnie ?')}</span></div>
+      <div class="mute">${fdate(o.depart_date)}${o.return_date ? ' → ' + fdate(o.return_date) : ' (aller simple)'}${o.stops === 0 ? ' · direct' : o.stops ? ` · ${o.stops} escale(s)` : ''} · relevé ${ago(o.observed_at)}</div>
+      ${o.link ? `<p><a href="${esc(o.link)}" target="_blank" rel="noopener">👉 Voir / réserver</a></p>` : ''}</div>`;
+  const dealCard = (d) => `<div class="card"><div class="row"><div>
+      <div class="price">${eur(d.price, d.currency)}</div>
+      <div><b>${esc(d.route.replace('-', ' → '))}</b> · ${d.cabin === 'BUSINESS' ? 'Business' : 'Éco+'}</div></div>
+      <div>${d.status === 'active' ? '<span class="tag hot">En cours</span>' : '<span class="tag">Expirée</span>'}${d.discount_pct ? `<span class="tag">−${d.discount_pct} %</span>` : ''}</div></div>
+      <div class="mute">${fdate(d.depart_date)}${d.return_date ? ' → ' + fdate(d.return_date) : ' (aller simple)'} · ${esc(d.airline || '')}${d.stops === 0 ? ' · direct' : d.stops ? ` · ${d.stops} escale(s)` : ''}</div>
+      <div class="mute">Alerte « ${esc(names[d.alert_id] || '?')} » · vue pour la 1ère fois ${ago(d.first_seen)} · dernière vue ${ago(d.last_seen)}
+        · a duré ${Math.max(1, Math.round((new Date(d.last_seen) - new Date(d.first_seen)) / 3.6e6))} h</div>
+      ${d.link ? `<p><a href="${esc(d.link)}" target="_blank" rel="noopener">👉 Voir / réserver</a></p>` : ''}</div>`;
+  $app.innerHTML = `<h1>✈️ AlertSeat</h1>
+    <div class="card row"><div><b>${nAct}</b> alerte(s) active(s)</div><div><b>${active.length}</b> offre(s) en cours</div></div>
+    <h2>Meilleurs tarifs sous ${PRICE_CAP} € (toutes compagnies, 48 dernières heures)</h2>${best.map(bestCard).join('') || `<p class="mute">Aucun tarif sous ${PRICE_CAP} € relevé ces 48 h. Le prochain passage est dans moins d’1 h.</p>`}
+    <h2>Offres en cours</h2>${active.map(dealCard).join('') || '<p class="mute">Aucune pour l’instant. Les vérifications tournent toutes les 3 h.</p>'}
+    <h2>Bons plans des sites spécialisés</h2>${(feed ?? []).filter((f) => { const m = f.title.match(/(\d{1,3}(?:[\s\u00a0\u202f.]\d{3})+|\d{2,5})\s*(?:€|eur\b)/i); return !m || Number(m[1].replace(/\D/g, '')) <= PRICE_CAP; }).map((f) => `<div class="card"><a href="${esc(f.link)}" target="_blank" rel="noopener">${esc(f.title)}</a>
+      <div class="mute">${esc(f.source)} · ${f.published_at ? ago(f.published_at) : ''}${f.matched_alert_ids?.length ? ' · <b>correspond à une de tes alertes</b>' : ''}</div></div>`).join('') || '<p class="mute">Rien pour l’instant.</p>'}
+    <h2>Historique des offres</h2>${old.map(dealCard).join('') || '<p class="mute">Vide.</p>'}`;
+}
+
+// ---------- Alertes
+function alertForm(a = {}) {
+  const v = (k, d = '') => esc(a[k] ?? d);
+  return `<div class="card"><h2 style="margin-top:0">${a.id ? 'Modifier' : 'Nouvelle'} alerte</h2>
+    <p class="mute">Départs depuis Paris (CDG ou Orly), toutes compagnies.</p>
+    <label>Nom</label><input id="f_name" value="${v('name')}" placeholder="Ex. New York en Business">
+    <label>Destination(s) : codes aéroport séparés par des virgules (ex. JFK, EWR, DXB)</label>
+    <input id="f_dest" value="${esc((a.destinations ?? []).join(', '))}" placeholder="JFK, MIA">
+    <div class="check"><input type="checkbox" id="f_any" ${a.anywhere ? 'checked' : ''}><span>N’importe où (je teste une sélection de destinations long-courrier)</span></div>
+    <div class="grid"><div><label>Classe</label><select id="f_cabin">
+      <option value="BUSINESS" ${a.cabin === 'BUSINESS' ? 'selected' : ''}>Business</option>
+      <option value="PREMIUM_ECONOMY" ${a.cabin === 'PREMIUM_ECONOMY' ? 'selected' : ''}>Éco+ (Premium Economy)</option></select></div>
+      <div><label>Prix maximum (€)</label><input id="f_max" type="number" min="0" value="${v('max_price', 700)}" placeholder="Ex. 700"></div>
+      <div><label>Départ à partir du</label><input id="f_from" type="date" value="${v('date_from')}"></div>
+      <div><label>Départ jusqu’au</label><input id="f_to" type="date" value="${v('date_to')}"></div>
+      <div><label>Séjour min (jours)</label><input id="f_tmin" type="number" min="1" value="${v('trip_min')}" placeholder="7"></div>
+      <div><label>Séjour max (jours)</label><input id="f_tmax" type="number" min="1" value="${v('trip_max')}" placeholder="21"></div>
+      <div><label>Baisse à signaler (% sous le prix habituel)</label><input id="f_drop" type="number" min="5" max="90" value="${v('drop_pct', 30)}"></div>
+      <div><label>Escales maximum</label><select id="f_stops">${[0, 1, 2].map((n) => `<option value="${n}" ${(a.max_stops ?? 1) === n ? 'selected' : ''}>${n === 0 ? 'Direct' : n}</option>`).join('')}</select></div></div>
+    <div class="check"><input type="checkbox" id="f_one" ${a.one_way ? 'checked' : ''}><span>Aller simple</span></div>
+    <label>Compagnies à exclure (optionnel, codes ex. FR, U2). Vide = toutes les compagnies</label>
+    <input id="f_ex" value="${esc((a.airlines_exclude ?? []).join(', '))}">
+    <label>Compagnies préférées uniquement (optionnel, ex. AF, EK, QR). Vide = toutes</label>
+    <input id="f_in" value="${esc((a.airlines_include ?? []).join(', '))}">
+    <p id="f_err" style="color:var(--hot)"></p>
+    <div class="row"><button class="primary" id="f_save">Enregistrer</button><button id="f_cancel">Annuler</button></div></div>`;
+}
+async function saveAlert() {
+  const g = (id) => document.getElementById(id), num = (id) => (g(id).value === '' ? null : Number(g(id).value));
+  const row = {
+    name: g('f_name').value.trim(), destinations: codes(g('f_dest').value), anywhere: g('f_any').checked,
+    cabin: g('f_cabin').value, max_price: num('f_max'), date_from: g('f_from').value, date_to: g('f_to').value,
+    one_way: g('f_one').checked, trip_min: g('f_one').checked ? null : num('f_tmin'), trip_max: g('f_one').checked ? null : num('f_tmax'),
+    drop_pct: num('f_drop') ?? 30, max_stops: num('f_stops') ?? 1,
+    airlines_exclude: codes(g('f_ex').value), airlines_include: codes(g('f_in').value), origins: ['CDG', 'ORY'],
+  };
+  const err = !row.name ? 'Donne un nom à l’alerte.' : (!row.anywhere && !row.destinations.length) ? 'Indique une destination ou coche « n’importe où ».'
+    : (!row.date_from || !row.date_to || row.date_to < row.date_from) ? 'Vérifie les dates.'
+    : (!row.one_way && row.trip_min == null) ? 'Indique la durée du séjour (ou coche aller simple).' : '';
+  if (err) { g('f_err').textContent = err; return; }
+  const q = editing?.id ? sb.from('alerts').update(row).eq('id', editing.id) : sb.from('alerts').insert(row);
+  const { error } = await q;
+  if (error) { g('f_err').textContent = error.message; return; }
+  editing = null; render();
+}
+async function alertsView() {
+  if (editing) {
+    $app.innerHTML = `<h1>Alertes</h1>${alertForm(editing)}`;
+    document.getElementById('f_save').onclick = saveAlert;
+    document.getElementById('f_cancel').onclick = () => { editing = null; render(); };
+    return;
+  }
+  const { data: alerts } = await sb.from('alerts').select('*').order('created_at', { ascending: false });
+  const ids = (alerts ?? []).map((a) => a.id);
+  const { data: obs } = ids.length ? await sb.from('price_observations').select('alert_id,price,observed_at').in('alert_id', ids).order('observed_at').limit(2000) : { data: [] };
+  const daily = (id) => { const m = new Map(); (obs ?? []).filter((o) => o.alert_id === id).forEach((o) => { const k = o.observed_at.slice(0, 10); m.set(k, Math.min(m.get(k) ?? Infinity, Number(o.price))); }); return [...m.values()]; };
+  $app.innerHTML = `<div class="row"><h1>Alertes</h1><button class="primary" id="new">+ Nouvelle alerte</button></div>` +
+    ((alerts ?? []).map((a) => `<div class="card"><div class="row"><b>${esc(a.name)}</b>${a.active ? '<span class="tag">Active</span>' : '<span class="tag off">En pause</span>'}</div>
+      <div class="mute">Paris (CDG/ORY) → ${a.anywhere ? 'n’importe où' : esc(a.destinations.join(', '))} · ${cabinName(a.cabin)}<br>
+      Départ ${fdate(a.date_from)} → ${fdate(a.date_to)}${a.one_way ? ' · aller simple' : ` · séjour ${a.trip_min}–${a.trip_max} j`}
+      · ${a.max_price ? `max ${eur(a.max_price)}` : 'sans plafond'} · baisse ≥ ${a.drop_pct} %<br>
+      ${a.last_checked_at ? 'Dernière vérification ' + ago(a.last_checked_at) : 'Pas encore vérifiée'}</div>
+      ${spark(daily(a.id))}
+      <div class="row" style="margin-top:8px"><button data-act="toggle" data-id="${a.id}">${a.active ? 'Mettre en pause' : 'Réactiver'}</button>
+        <button data-act="edit" data-id="${a.id}">Modifier</button><button class="danger" data-act="del" data-id="${a.id}">Supprimer</button></div></div>`).join('') || '<p class="mute">Aucune alerte. Crée la première !</p>');
+  document.getElementById('new').onclick = () => { editing = {}; render(); };
+  $app.querySelectorAll('[data-act]').forEach((b) => b.onclick = async () => {
+    const a = alerts.find((x) => x.id === b.dataset.id);
+    if (b.dataset.act === 'toggle') await sb.from('alerts').update({ active: !a.active }).eq('id', a.id);
+    if (b.dataset.act === 'edit') { editing = a; }
+    if (b.dataset.act === 'del' && confirm(`Supprimer « ${a.name} » et son historique ?`)) await sb.from('alerts').delete().eq('id', a.id);
+    render();
+  });
+}
+
+// ---------- Réglages
+async function settingsView() {
+  const { data: p } = await sb.from('profiles').select('*').eq('user_id', user.id).maybeSingle();
+  $app.innerHTML = `<h1>Réglages</h1><div class="card"><p>Connecté : <b>${esc(user.email)}</b></p>
+    <label>Identifiant de ton chat Telegram (voir le guide, étape Telegram)</label>
+    <input id="s_tg" value="${esc(p?.telegram_chat_id ?? '')}" inputmode="numeric" placeholder="123456789">
+    <div class="check"><input type="checkbox" id="s_nt" ${p?.notify_telegram !== false ? 'checked' : ''}><span>Notifications Telegram</span></div>
+    <div class="check"><input type="checkbox" id="s_ne" ${p?.notify_email !== false ? 'checked' : ''}><span>Notifications par email</span></div>
+    <div class="row"><button class="primary" id="s_save">Enregistrer</button><button id="s_out">Se déconnecter</button></div><p id="s_msg" class="mute"></p></div>`;
+  document.getElementById('s_save').onclick = async () => {
+    const { error } = await sb.from('profiles').upsert({ user_id: user.id, telegram_chat_id: document.getElementById('s_tg').value.trim() || null,
+      notify_telegram: document.getElementById('s_nt').checked, notify_email: document.getElementById('s_ne').checked });
+    document.getElementById('s_msg').textContent = error ? error.message : 'Enregistré ✔';
+  };
+  document.getElementById('s_out').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+}
+
+async function render() {
+  $nav.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  try { await ({ dash: dashView, alerts: alertsView, settings: settingsView }[tab])(); }
+  catch (e) { $app.innerHTML = `<div class="card">Erreur : ${esc(e.message)}</div>`; }
+}
+$nav.querySelectorAll('button').forEach((b) => b.onclick = () => { tab = b.dataset.tab; editing = null; render(); });
+
+(async () => {
+  if (APP_CONFIG.SUPABASE_URL.includes('XXXX')) { $app.innerHTML = '<div class="card">Renseigne <b>web/config.js</b> avec les infos de ton projet Supabase (voir le guide).</div>'; return; }
+  const { data } = await sb.auth.getSession();
+  user = data.session?.user;
+  sb.auth.onAuthStateChange((_e, s) => { if (s?.user && !user) { user = s.user; $nav.classList.remove('hide'); render(); } });
+  if (!user) return loginView();
+  $nav.classList.remove('hide'); render();
+})();
+</script>
+</body>
+</html>
