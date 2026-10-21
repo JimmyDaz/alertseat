@@ -11,7 +11,7 @@ const CAP = Number(process.env.PRICE_CAP || 700); // AlertSeat ne propose jamais
 // Quota mensuel de recherches du fournisseur : À RÉGLER selon son offre gratuite réelle (variable SEARCH_BUDGET_MONTH).
 const BUDGET = PROVIDER === 'mock' ? Infinity : Number(process.env.SEARCH_BUDGET_MONTH || 200);
 const PER_ALERT = Number(process.env.MAX_SEARCHES_PER_ALERT || 2);
-const PER_RUN = Number(process.env.MAX_SEARCHES_PER_RUN || 10);
+const PER_RUN = Number(process.env.MAX_SEARCHES_PER_RUN || 3); // petit plafond par passage : pas de rafale en début de mois
 const INTERVAL_H = Number(process.env.INTERVAL_HOURS || 1);
 const ORIGINS = ['CDG', 'ORY']; // départs toujours depuis Paris (Roissy ou Orly)
 const runIndex =Math.floor(Date.now() / (INTERVAL_H * 3600e3));
@@ -41,7 +41,9 @@ function buildSearches(alert) {
   }
   if (!combos.length) return [];
   const n = Math.min(PER_ALERT, combos.length);
-  const offset = (runIndex * n) % combos.length;
+  // Curseur = nombre de recherches déjà faites ce mois-ci : chaque passage reprend là où le précédent s'est arrêté,
+  // si bien que toutes les dates, destinations et aéroports sont parcourus tour à tour, sans doublons ni trous.
+  const offset = used % combos.length;
   return Array.from({ length: n }, (_, i) => combos[(offset + i) % combos.length]);
 }
 

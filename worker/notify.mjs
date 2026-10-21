@@ -1,4 +1,6 @@
 // Envoi des notifications : Telegram (gratuit) et email (Resend, gratuit jusqu'à ~100 mails/jour).
+import { airlineName } from './airlines.mjs';
+
 const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
 const eur = (n, cur = 'EUR') => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n);
 const fr = (d) => (d ? new Date(d).toLocaleDateString('fr-FR') : '');
@@ -12,7 +14,7 @@ export function dealMessage(d) {
     `💶 <b>${eur(d.price, d.currency)}</b>` +
       (d.median_price ? ` (habituel ≈ ${eur(d.median_price, d.currency)}, −${d.discount_pct} %)` : ''),
     `📅 ${fr(d.depart_date)}${d.return_date ? ` → ${fr(d.return_date)}` : ' (aller simple)'}` +
-      `${d.airline ? ` · ${esc(d.airline)}` : ''}${d.stops === 0 ? ' · direct' : d.stops ? ` · ${d.stops} escale(s)` : ''}`,
+      `${d.airline ? ` · ${esc(airlineName(d.airline))}` : ''}${d.stops === 0 ? ' · direct' : d.stops ? ` · ${d.stops} escale(s)` : ''}`,
     `🔔 ${d.reasons.map((r) => REASON[r]).join(' + ')}`,
     '⏱ Ces tarifs partent souvent en quelques heures : vérifie vite.',
   ];
