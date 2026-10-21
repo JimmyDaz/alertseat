@@ -92,6 +92,23 @@ Anti-spam : une même offre n'est renotifiée que si son prix baisse encore d'au
 - **Pas de dépassement de l'offre gratuite** : un compteur mensuel (`api_usage`) arrête les recherches au quota `SEARCH_BUDGET_MONTH` (200 par défaut, **à régler selon l'offre gratuite réelle de ton fournisseur**). Le quota est étalé sur le mois (15 % gardés pour les confirmations) ; les alertes les moins récemment vérifiées passent en premier.
 - **Conséquence honnête** : avec ~200 recherches/mois, l'API de prix ne couvre pas 20 à 50 alertes toutes les heures (environ 6 recherches par jour). La source principale « exclusive » est donc le flux de bons plans, gratuit et illimité, vérifié chaque heure ; les recherches de prix servent à confirmer et à échantillonner les alertes. Pour surveiller toutes les alertes de près, il faudra un fournisseur payant (le garde-fou s'adapte en changeant `SEARCH_BUDGET_MONTH`).
 
+## 4 ter. Passer à Duffel (fournisseur sans plafond de 250 recherches)
+
+Le code est déjà prêt (`worker/providers/duffel.mjs`). Il manque seulement un compte et un token.
+
+**Ce qui est établi** (page tarifs de Duffel, octobre 2026) : pas de frais fixes ; 3 $ par commande confirmée ; **0,005 $ par recherche** au-delà de 1 500 recherches par commande. AlertSeat ne passe aucune commande, donc chaque recherche est facturée 0,005 $ : environ **5 $ pour 1 000 recherches**, soit ~20 $ pour 4 000 recherches par mois.
+
+**Ce qui n'est PAS établi** : les conditions d'accès « réel » (un token `duffel_test_…` ne voit que des ressources de test), si un usage de pure surveillance de prix est accepté, et quelles compagnies Duffel couvre (Emirates, Qatar Airways, Air France ?). À demander à Duffel avant de payer quoi que ce soit.
+
+**Marche à suivre**
+1. Crée un compte sur duffel.com (à ton nom, c'est toi qui le fais), puis demande l'activation du mode réel dans le tableau de bord.
+2. Crée un token **live** (préfixe `duffel_live_`) en lecture/écriture.
+3. GitHub → Secrets : ajoute `DUFFEL_TOKEN`.
+4. GitHub → Variables : `PROVIDER` = `duffel`, et `SEARCH_BUDGET_MONTH` = le nombre maximum de recherches que tu acceptes de payer (ex. 4000 ≈ 20 $). Le garde-fou s'arrête à ce chiffre, jamais au-delà.
+5. Lance un passage à la main et vérifie le journal. En cas d'erreur Duffel, repasse `PROVIDER` à `serpapi`.
+
+Revenir en arrière est immédiat : il suffit de remettre `PROVIDER` à `serpapi`.
+
 ## 5. Plan de développement
 
 1. **MVP (ce dossier)** : alertes, détection, Telegram + email, tableau de bord, pause/modif/suppression, flux RSS.
