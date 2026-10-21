@@ -1,0 +1,33 @@
+name: AlertSeat - vérifier les alertes
+
+on:
+  schedule:
+    - cron: '7 * * * *'      # toutes les heures, 24 h/24
+  workflow_dispatch:         # bouton "Run workflow" pour lancer à la main
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+        working-directory: worker
+      - run: npm test
+        working-directory: worker
+      - run: node check.mjs
+        working-directory: worker
+        env:
+          INTERVAL_HOURS: '1'
+          PRICE_CAP: ${{ vars.PRICE_CAP || '700' }}
+          SEARCH_BUDGET_MONTH: ${{ vars.SEARCH_BUDGET_MONTH || '200' }}
+          PROVIDER: ${{ vars.PROVIDER || 'mock' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          DUFFEL_TOKEN: ${{ secrets.DUFFEL_TOKEN }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
